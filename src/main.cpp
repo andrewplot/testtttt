@@ -285,13 +285,13 @@ static void render_oled_ui() {
     char line2[17];
 
     // Line 1: Money and wave number
-    snprintf(line1, sizeof(line1), "$%d W%d/%d", 
+    snprintf(line1, sizeof(line1), "$%d Wave: %d/%d", 
              game.money, 
              wave_manager.current_wave + 1,
              wave_manager_get_total_waves());
     
     // Line 2: Lives and score
-    snprintf(line2, sizeof(line2), "HP:%d S:%d", 
+    snprintf(line2, sizeof(line2), "HP:%d Score:%d", 
              game.lives,
              game.score);
 

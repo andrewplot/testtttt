@@ -72,7 +72,8 @@ typedef enum {
     TOWER_MACHINE_GUN = 0,
     TOWER_CANNON,
     TOWER_SNIPER,
-    TOWER_RADAR
+    TOWER_RADAR,
+    TOWER_BLANK  // No tower selected / invalid
 } TowerType;
 
 typedef struct {

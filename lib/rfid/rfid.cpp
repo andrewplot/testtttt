@@ -12,13 +12,14 @@ volatile bool rfid_flag = false;
 uint8_t uid[10];
 uint8_t uid_len;
 
-TowerType match_monkey(uint8_t rfid_tag[10]) {
+HardwareTowerType match_monkey(uint8_t rfid_tag[10]) {
     switch (rfid_tag[1]) {
         case 0xC7: return MACHINE_GUN;
         case 0x76: return CANNON;
         case 0x35: return SNIPER;
         case 0xD7: return RADAR;
     }
+    return BLANK;
 }
 
 void rfid_isr() {
@@ -43,7 +44,7 @@ void init_rfid() {
     timer0_hw->alarm[1] = target;
 }
 
-TowerType sample_rfid() {
+HardwareTowerType sample_rfid() {
     if (pn532_uart_read_uid(uid, &uid_len)) {
         printf("Tag scanned\n");
         victory_sound();
@@ -53,4 +54,3 @@ TowerType sample_rfid() {
         return BLANK;
     }
 }
-

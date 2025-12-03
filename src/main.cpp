@@ -1,6 +1,8 @@
 // main.cpp – RP2350 + PicoSDK + PlatformIO tower defense game
 
 #include <stdio.h>
+#include <math.h>
+#include <stdlib.h>
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
 #include "pico/multicore.h"
@@ -11,6 +13,7 @@
 #include "oled_display.hh"
 #include "buzzer_pwm.hh"
 #include "rfid_bridge.hh"
+#include "rfid.hh"  // For sample_rfid() direct call
 #include "pin-definitions.hh"
 
 
@@ -44,6 +47,10 @@ uint32_t last_time_ms = 0;
 int current_slot_index = 0;
 bool show_placement_mode = false;  // Track if user is in tower placement mode
 
+// Track last scanned tower to avoid repeated triggers
+extern TowerType scanned_tower;  // Defined in rfid_bridge.cpp
+TowerType last_scanned_tower = TOWER_BLANK;
+
 // -----------------------------------------------------------------------------
 // Initialize everything
 // -----------------------------------------------------------------------------
@@ -75,55 +82,174 @@ static void setup_hardware() {
 }
 
 // -----------------------------------------------------------------------------
+// Check if RFID selected a new tower and enter placement mode
+// -----------------------------------------------------------------------------
+
+// Helper to convert hardware to game tower type
+static TowerType convert_hw_to_game_tower(HardwareTowerType hw) {
+    switch (hw) {
+        case MACHINE_GUN: return TOWER_MACHINE_GUN;
+        case CANNON:      return TOWER_CANNON;
+        case SNIPER:      return TOWER_SNIPER;
+        case RADAR:       return TOWER_RADAR;
+        case BLANK:
+        default:          return TOWER_BLANK;
+    }
+}
+
+static void check_tower_selection() {
+    // Only check when RFID flag is set (timer-based, every 1 second)
+    if (!rfid_flag) return;
+    
+    rfid_flag = false;  // Clear the flag
+    
+    // Sample RFID once per timer period (returns HardwareTowerType)
+    HardwareTowerType hw_tower_scanned = sample_rfid();
+    
+    // Convert to game TowerType
+    TowerType game_tower = convert_hw_to_game_tower(hw_tower_scanned);
+    
+    // Check if a new tower was scanned (not BLANK and different from last)
+    if (game_tower != TOWER_BLANK && game_tower != last_scanned_tower) {
+        printf("=== NEW TOWER SCANNED: Hardware=%d, Game=%d ===\n", hw_tower_scanned, game_tower);
+        
+        // Update selected tower type and scanned_tower global
+        game.selected_tower = game_tower;
+        scanned_tower = game_tower;
+        
+        // Enter placement mode
+        show_placement_mode = true;
+        
+        // Reset cursor to first available slot
+        current_slot_index = 0;
+        
+        // Print tower info
+        const TowerStats* stats = &TOWER_STATS_TABLE[game_tower];
+        printf("Selected tower - Cost: %d, Range: %.1f, Damage: %d\n",
+               stats->cost, stats->range, stats->damage);
+        
+        last_scanned_tower = game_tower;
+    }
+}
+
+// -----------------------------------------------------------------------------
 // Joystick → choose tower slot index
 // -----------------------------------------------------------------------------
 
 static void handle_joystick() {
+    // Only check joystick when the flag is set (timer-based, every 25ms)
+    if (!joystick_flag) return;
+    
+    joystick_flag = false;  // Clear the flag
+    
     JoystickDirection jx = sample_js_x();
+    JoystickDirection jy = sample_js_y();  // Read but ignore Y-axis
     bool sel = sample_js_select();
 
-    printf("Joystick: jx=%d, sel=%d, placement_mode=%d\n", jx, sel, show_placement_mode);
+    // Debug - print when values change
+    static JoystickDirection last_debug_jx = center;
+    static JoystickDirection last_debug_jy = center;
+    static bool last_debug_sel = false;
+    
+    if (jx != last_debug_jx || jy != last_debug_jy || sel != last_debug_sel) {
+        printf("[JS] X=%d, Y=%d, SEL=%d\n", jx, jy, sel);
+        last_debug_jx = jx;
+        last_debug_jy = jy;
+        last_debug_sel = sel;
+    }
 
     // Only navigate if in placement mode
     if (show_placement_mode && game.tower_slot_count > 0) {
-        if (jx == right) {
+        // Navigate between slots using LEFT/RIGHT only (ignore Y-axis)
+        static JoystickDirection last_jx = center;
+        
+        // Only trigger on edge (transition from center to left/right)
+        if (jx == right && last_jx == center) {
             current_slot_index++;
             if (current_slot_index >= game.tower_slot_count)
                 current_slot_index = 0;
-            printf("Moved to slot %d\n", current_slot_index);
-        } else if (jx == left) {
+            
+            // Skip occupied slots
+            int attempts = 0;
+            while (game.tower_slots[current_slot_index].occupied && attempts < game.tower_slot_count) {
+                current_slot_index++;
+                if (current_slot_index >= game.tower_slot_count)
+                    current_slot_index = 0;
+                attempts++;
+            }
+            
+            printf("→ RIGHT: Moved to slot %d at (%d, %d)\n", 
+                   current_slot_index,
+                   game.tower_slots[current_slot_index].x,
+                   game.tower_slots[current_slot_index].y);
+        } 
+        else if (jx == left && last_jx == center) {
             current_slot_index--;
             if (current_slot_index < 0)
                 current_slot_index = game.tower_slot_count - 1;
-            printf("Moved to slot %d\n", current_slot_index);
+            
+            // Skip occupied slots
+            int attempts = 0;
+            while (game.tower_slots[current_slot_index].occupied && attempts < game.tower_slot_count) {
+                current_slot_index--;
+                if (current_slot_index < 0)
+                    current_slot_index = game.tower_slot_count - 1;
+                attempts++;
+            }
+            
+            printf("← LEFT: Moved to slot %d at (%d, %d)\n", 
+                   current_slot_index,
+                   game.tower_slots[current_slot_index].x,
+                   game.tower_slots[current_slot_index].y);
         }
+        
+        last_jx = jx;
     }
 
-    // On button press, try place tower at current slot
+    // On button press (SELECT), place tower at current slot
+    // IMPORTANT: Only trigger on button press, NOT on Y-axis movement
     static bool last_sel = false;
-    if (sel && !last_sel && show_placement_mode && game.tower_slot_count > 0) {
-        printf("Attempting to place tower...\n");
-        TowerSlot* slot = &game.tower_slots[current_slot_index];
+    
+    // Edge detection: transition from false to true (button just pressed)
+    // AND make sure we're not also moving on X or Y axis (to avoid accidental triggers)
+    if (sel && !last_sel && jx == center && jy == center) {
+        printf("=== SELECT BUTTON PRESSED (clean press) ===\n");
+        
+        if (show_placement_mode && game.tower_slot_count > 0) {
+            printf("=== ATTEMPTING TOWER PLACEMENT ===\n");
+            TowerSlot* slot = &game.tower_slots[current_slot_index];
+            
+            printf("Slot %d: pos=(%d,%d), occupied=%d\n",
+                   current_slot_index, slot->x, slot->y, slot->occupied);
+            printf("Selected tower: %d, Cost: %d, Money: %d\n",
+                   game.selected_tower, TOWER_STATS_TABLE[game.selected_tower].cost, game.money);
 
-        if (!slot->occupied) {
-            bool ok = game_place_tower(&game,
-                                       game.selected_tower,
-                                       slot->x,
-                                       slot->y);
-            if (ok) {
-                slot->occupied = true;
-                beep_ok();
-                show_placement_mode = false;  // Exit placement mode after placing
-                printf("Tower placed successfully!\n");
+            if (!slot->occupied) {
+                bool ok = game_place_tower(&game,
+                                           game.selected_tower,
+                                           slot->x,
+                                           slot->y);
+                if (ok) {
+                    slot->occupied = true;
+                    beep_ok();
+                    show_placement_mode = false;  // Exit placement mode after placing
+                    printf("✓ TOWER PLACED SUCCESSFULLY!\n");
+                    printf("Remaining money: %d, Tower count: %d\n", game.money, game.tower_count);
+                } else {
+                    error_sound();
+                    printf("✗ PLACEMENT FAILED (insufficient funds)\n");
+                }
             } else {
                 error_sound();
-                printf("Tower placement failed (not enough money?)\n");
+                printf("✗ SLOT ALREADY OCCUPIED\n");
             }
         } else {
-            error_sound();
-            printf("Slot already occupied!\n");
+            printf("✗ Not in placement mode - scan RFID tag first\n");
         }
+    } else if (sel && !last_sel) {
+        printf("Button pressed but joystick not centered (X=%d, Y=%d) - ignoring\n", jx, jy);
     }
+    
     last_sel = sel;
 }
 
@@ -168,28 +294,28 @@ static void render_game_to_framebuffer() {
     if (show_placement_mode && game.tower_slot_count > 0) {
         TowerSlot* slot = &game.tower_slots[current_slot_index];
         
-        // Debug output
-        static int debug_counter = 0;
-        if (debug_counter++ % 30 == 0) {  // Print every 30 frames
-            printf("PLACEMENT MODE ACTIVE - Slot %d at (%d, %d)\n", 
-                   current_slot_index, slot->x, slot->y);
-        }
-        
         // Get range for the selected tower type
         const TowerStats* stats = &TOWER_STATS_TABLE[game.selected_tower];
         draw_tower_range(slot->x, slot->y, stats->range);
         
         // Highlight current tower slot cursor (on top of range)
+        // Make it pulse by varying brightness based on game time
+        int brightness = 128 + (int)(127.0f * sinf(game.game_time * 4.0f));
+        
         int cx = slot->x;
         int cy = slot->y;
-        // simple 3x3 highlight border in bright white
-        for (int dy = -1; dy <= 1; ++dy) {
-            for (int dx = -1; dx <= 1; ++dx) {
-                int px = cx + dx;
-                int py = cy + dy;
-                if (px >= 0 && px < MATRIX_WIDTH &&
-                    py >= 0 && py < MATRIX_HEIGHT) {
-                    set_pixel(px, py, Color(255, 255, 255));
+        
+        // Draw a 5x5 highlight box with pulsing color
+        for (int dy = -2; dy <= 2; ++dy) {
+            for (int dx = -2; dx <= 2; ++dx) {
+                // Only draw border, not filled
+                if (abs(dx) == 2 || abs(dy) == 2) {
+                    int px = cx + dx;
+                    int py = cy + dy;
+                    if (px >= 0 && px < MATRIX_WIDTH &&
+                        py >= 0 && py < MATRIX_HEIGHT) {
+                        set_pixel(px, py, Color(brightness, brightness, 255));
+                    }
                 }
             }
         }
@@ -200,8 +326,21 @@ static void render_oled_ui() {
     char line1[17];
     char line2[17];
 
-    snprintf(line1, sizeof(line1), "Money:%4d", game.money);
-    snprintf(line2, sizeof(line2), "Lives:%3d", game.lives);
+    if (show_placement_mode) {
+        // Show tower selection info when in placement mode
+        const char* tower_names[] = {"MG", "Cannon", "Sniper", "Radar"};
+        const TowerStats* stats = &TOWER_STATS_TABLE[game.selected_tower];
+        
+        snprintf(line1, sizeof(line1), "%s $%d R%.0f",
+                 tower_names[game.selected_tower],
+                 stats->cost,
+                 stats->range);
+        snprintf(line2, sizeof(line2), "Money:%4d", game.money);
+    } else {
+        // Normal game info
+        snprintf(line1, sizeof(line1), "Money:%4d", game.money);
+        snprintf(line2, sizeof(line2), "Lives:%3d", game.lives);
+    }
 
     oled_print(line1, line2);
 }
@@ -224,15 +363,24 @@ int main() {
     setup_hardware();
     multicore_launch_core1(render_matrix);
 
+    printf("\n=== TOWER DEFENSE GAME STARTED ===\n");
+    printf("Instructions:\n");
+    printf("1. Scan RFID tag to select tower type\n");
+    printf("2. Use joystick LEFT/RIGHT to choose slot\n");
+    printf("3. Press joystick SELECT button to place tower\n");
+    printf("================================\n\n");
+
     while (true) {
-        sample_peripherals();
-        handle_joystick();
+        // Check RFID and joystick using timer-based flags (no more sample_peripherals)
+        check_tower_selection();  // Only runs when rfid_flag is set (1 second timer)
+        handle_joystick();        // Only runs when joystick_flag is set (25ms timer)
+        
         update_game();
         render_game_to_framebuffer();
         render_oled_ui();
         multicore_fifo_push_blocking(1);
 
-        sleep_ms(40);  // ~__ FPS
+        sleep_ms(40);  // ~25 FPS
     }
 
     return 0;

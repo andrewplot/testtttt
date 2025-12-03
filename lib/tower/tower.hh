@@ -1,7 +1,9 @@
 #ifndef TOWER_HH
 #define TOWER_HH
 
-enum TowerType {
+// Hardware tower type enum (used by RFID tags)
+// Renamed to avoid conflict with game TowerType
+enum HardwareTowerType {
     MACHINE_GUN,
     CANNON,
     SNIPER,
@@ -12,9 +14,9 @@ enum TowerType {
 };
 
 
-class Tower {
+class HardwareTower {
     public:
-        TowerType type;
+        HardwareTowerType type;
         int x_pos;
         int y_pos;
 

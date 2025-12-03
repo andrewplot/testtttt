@@ -13,9 +13,9 @@ void init_rfid();
 /**
  * @brief samples rfid one time returns scanned_tower
  * 
- * @return TowerType of rfid scanned
+ * @return HardwareTowerType of rfid scanned
  */
-TowerType sample_rfid();
+HardwareTowerType sample_rfid();
 
 
 #endif // RFID_HH

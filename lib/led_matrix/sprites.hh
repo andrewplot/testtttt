@@ -6,6 +6,6 @@
 
 const Color* get_sprite_tree();
 
-const Color* get_sprite(TowerType type);
+const Color* get_sprite(HardwareTowerType type);
 
 #endif // SPRITES_H

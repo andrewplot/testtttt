@@ -43,6 +43,6 @@ const Color* get_sprite_tree() {
     return (const Color*) sprite_tree;
 }
 
-const Color* get_sprite(TowerType type) {
+const Color* get_sprite(HardwareTowerType type) {
     return sprite_map[type];
 }

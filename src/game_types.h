@@ -42,6 +42,9 @@ typedef struct {
     uint8_t  split_count;
 } EnemyStats;
 
+// External declaration of enemy stats table (defined in game.cpp)
+extern const EnemyStats ENEMY_STATS_TABLE[];
+
 typedef struct {
     float     x;
     float     y;
@@ -83,6 +86,9 @@ typedef struct {
     bool      is_radar;
     uint8_t   splash_radius;    // 0 = no splash
 } TowerStats;
+
+// External declaration of tower stats table (defined in game.cpp)
+extern const TowerStats TOWER_STATS_TABLE[];
 
 typedef struct {
     float     x;
@@ -180,6 +186,7 @@ void enemy_draw(const Enemy* enemy);
 void tower_init(Tower* tower, TowerType type, int16_t x, int16_t y);
 void tower_update(Tower* tower, float dt, GameState* game);
 void tower_draw(const Tower* tower);
+void draw_tower_range(int16_t x, int16_t y, float range);
 
 // Projectile functions
 void projectile_init(Projectile* proj,

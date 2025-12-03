@@ -6,6 +6,7 @@
 #include "pico/multicore.h"
 
 #include "game_types.h"
+#include "map_render.hh"
 #include "joystick.hh"
 #include "oled_display.hh"
 #include "buzzer_pwm.hh"
@@ -28,8 +29,6 @@ TO IMPLEMENT:
 void init_matrix();
 void swap_frames();
 void render_frame();
-void set_path();
-void set_tree(int x, int y);
 void set_pixel(int x, int y, Color color);
 
 // -----------------------------------------------------------------------------
@@ -43,20 +42,7 @@ uint32_t last_time_ms = 0;
 
 // Cursor over tower slots
 int current_slot_index = 0;
-
-// -----------------------------------------------------------------------------
-// Helper: simple buzzer beep
-// -----------------------------------------------------------------------------
-
-// static void beep_ok() {
-//     buzzer_play_tone(NOTE_C5, 80);
-// }
-
-// static void beep_error() {
-//     buzzer_play_tone(NOTE_C4, 40);
-//     sleep_ms(30);
-//     buzzer_play_tone(NOTE_C4, 120);
-// }
+bool show_placement_mode = false;  // Track if user is in tower placement mode
 
 // -----------------------------------------------------------------------------
 // Initialize everything
@@ -67,11 +53,9 @@ static void setup_hardware() {
 
     // Matrix, joystick, OLED, RFID, buzzer
     init_matrix();
-    set_path();          // draw static path once
     init_joystick();
     rfid_setup();
     init_oled();
-
 
     // buzzer on whatever pin your board uses (from pin-definitions.hh)
     buzzer_pwm_init();
@@ -80,6 +64,9 @@ static void setup_hardware() {
     // Initialize game
     game_init(&game);
     game.selected_tower = TOWER_MACHINE_GUN;
+    
+    // Initialize map rendering (generates textures)
+    map_render_init(&game);
 
     // Spawn one test enemy so you see something move
     game_spawn_enemy(&game, ENEMY_SCOUT);
@@ -93,25 +80,29 @@ static void setup_hardware() {
 
 static void handle_joystick() {
     JoystickDirection jx = sample_js_x();
-    JoystickDirection jy = sample_js_y();
     bool sel = sample_js_select();
 
-    // Horizontal navigation over tower slots
-    if (game.tower_slot_count > 0) {
+    printf("Joystick: jx=%d, sel=%d, placement_mode=%d\n", jx, sel, show_placement_mode);
+
+    // Only navigate if in placement mode
+    if (show_placement_mode && game.tower_slot_count > 0) {
         if (jx == right) {
             current_slot_index++;
             if (current_slot_index >= game.tower_slot_count)
                 current_slot_index = 0;
+            printf("Moved to slot %d\n", current_slot_index);
         } else if (jx == left) {
             current_slot_index--;
             if (current_slot_index < 0)
                 current_slot_index = game.tower_slot_count - 1;
+            printf("Moved to slot %d\n", current_slot_index);
         }
     }
 
     // On button press, try place tower at current slot
     static bool last_sel = false;
-    if (sel && !last_sel && game.tower_slot_count > 0) {
+    if (sel && !last_sel && show_placement_mode && game.tower_slot_count > 0) {
+        printf("Attempting to place tower...\n");
         TowerSlot* slot = &game.tower_slots[current_slot_index];
 
         if (!slot->occupied) {
@@ -121,36 +112,20 @@ static void handle_joystick() {
                                        slot->y);
             if (ok) {
                 slot->occupied = true;
-                // beep_ok();
+                beep_ok();
+                show_placement_mode = false;  // Exit placement mode after placing
+                printf("Tower placed successfully!\n");
             } else {
-                // beep_error();
+                error_sound();
+                printf("Tower placement failed (not enough money?)\n");
             }
         } else {
-            // beep_error();
+            error_sound();
+            printf("Slot already occupied!\n");
         }
     }
     last_sel = sel;
 }
-
-// -----------------------------------------------------------------------------
-// RFID → set selected tower type
-// -----------------------------------------------------------------------------
-
-// void handle_rfid(GameState* game) {
-//     int code = rfid_get_tower_code();  // 0..4
-
-//     switch (code) {
-//         case 1: game->selected_tower = TOWER_MACHINE_GUN; break;
-//         case 2: game->selected_tower = TOWER_CANNON;      break;
-//         case 3: game->selected_tower = TOWER_SNIPER;      break;
-//         case 4: game->selected_tower = TOWER_RADAR;       break;
-//         default: return; // nothing scanned
-//     }
-
-//     printf("Selected tower code %d\n", code);
-//     beep_ok();
-// }
-
 
 // -----------------------------------------------------------------------------
 // Update game logic
@@ -180,23 +155,34 @@ static void update_game() {
 // -----------------------------------------------------------------------------
 
 static void render_game_to_framebuffer() {
-    // Grass background
-    for (int y = 0; y < MATRIX_HEIGHT; ++y) {
-        for (int x = 0; x < MATRIX_WIDTH; ++x) {
-            set_pixel(x, y, Color(0, 40, 0));
-            //framebuffer[y][x] = Color(0, 40, 0);
-        }
-    }
+    // 1. Draw map (background + path with textures)
+    map_render_draw(&game);
+    
+    // 2. Draw decorations (trees, rocks, lakes) - BEFORE game objects
+    map_render_decorations();
 
-    // Ask game.cpp to draw enemies, towers, projectiles into framebuffer
+    // 3. Draw game objects (tower slots, enemies, towers, projectiles)
     game_draw(&game);
 
-    // OPTIONAL: highlight current tower slot cursor
-    if (game.tower_slot_count > 0) {
+    // 4. If in placement mode, show range indicator at current slot
+    if (show_placement_mode && game.tower_slot_count > 0) {
         TowerSlot* slot = &game.tower_slots[current_slot_index];
+        
+        // Debug output
+        static int debug_counter = 0;
+        if (debug_counter++ % 30 == 0) {  // Print every 30 frames
+            printf("PLACEMENT MODE ACTIVE - Slot %d at (%d, %d)\n", 
+                   current_slot_index, slot->x, slot->y);
+        }
+        
+        // Get range for the selected tower type
+        const TowerStats* stats = &TOWER_STATS_TABLE[game.selected_tower];
+        draw_tower_range(slot->x, slot->y, stats->range);
+        
+        // Highlight current tower slot cursor (on top of range)
         int cx = slot->x;
         int cy = slot->y;
-        // simple 3x3 highlight border
+        // simple 3x3 highlight border in bright white
         for (int dy = -1; dy <= 1; ++dy) {
             for (int dx = -1; dx <= 1; ++dx) {
                 int px = cx + dx;
@@ -209,15 +195,6 @@ static void render_game_to_framebuffer() {
         }
     }
 }
-
-// static void push_framebuffer_to_matrix() {
-//     // copy framebuffer to LED matrix driver’s frame buffer
-//     for (int y = 0; y < MATRIX_HEIGHT; ++y) {
-//         for (int x = 0; x < MATRIX_WIDTH; ++x) {
-//             set_pixel(x, y, framebuffer[y][x]);
-//         }
-//     }
-// }
 
 static void render_oled_ui() {
     char line1[17];
@@ -249,26 +226,14 @@ int main() {
 
     while (true) {
         sample_peripherals();
-        // handle_rfid(&game);
         handle_joystick();
         update_game();
         render_game_to_framebuffer();
-        //push_framebuffer_to_matrix();
         render_oled_ui();
         multicore_fifo_push_blocking(1);
 
-        sleep_ms(20);  // ~33 FPS
+        sleep_ms(40);  // ~__ FPS
     }
 
     return 0;
 }
-
-
-/*
-1. path
-2. random background
-3. decorations
-4. tower sprites
-5. wave system
-
-*/

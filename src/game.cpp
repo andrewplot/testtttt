@@ -209,10 +209,8 @@ void enemy_draw(const Enemy* enemy) {
     // Ghost enemies are barely visible
     if (enemy->invisible && !enemy->revealed) {
         Color ghost_color = {enemy->color.r / 8, enemy->color.g / 8, enemy->color.b / 4};
-        //framebuffer[y][x] = ghost_color;
         set_pixel(x, y, ghost_color);
     } else {
-        //framebuffer[y][x] = enemy->color;
         set_pixel(x, y, enemy->color);
     }
 }
@@ -320,7 +318,6 @@ void tower_draw(const Tower* tower) {
             int px = x + dx;
             int py = y + dy;
             if (px >= 0 && px < MATRIX_WIDTH && py >= 0 && py < MATRIX_HEIGHT) {
-                // framebuffer[py][px] = tower->color;
                 set_pixel(px, py, tower->color);
             }
         }
@@ -330,9 +327,49 @@ void tower_draw(const Tower* tower) {
         int tip_x = x + (int)(cosf(tower->radar_angle) * 3.0f);
         int tip_y = y + (int)(sinf(tower->radar_angle) * 3.0f);
         if (tip_x >= 0 && tip_x < MATRIX_WIDTH && tip_y >= 0 && tip_y < MATRIX_HEIGHT) {
-            //framebuffer[tip_y][tip_x] = Color{0, 255, 255};
             set_pixel(tip_x, tip_y, Color(0, 255, 255));
+        }
+    }
+}
 
+void draw_tower_range(int16_t x, int16_t y, float range) {
+    // Draw a circle showing the tower's range
+    // Using midpoint circle algorithm
+    int cx = x;
+    int cy = y;
+    int radius = (int)range;
+    
+    int dx = radius;
+    int dy = 0;
+    int err = 0;
+    
+    Color range_color = {80, 80, 80};  // Gray range indicator
+    
+    while (dx >= dy) {
+        // Draw 8 symmetric points
+        int points[8][2] = {
+            {cx + dx, cy + dy}, {cx + dy, cy + dx},
+            {cx - dy, cy + dx}, {cx - dx, cy + dy},
+            {cx - dx, cy - dy}, {cx - dy, cy - dx},
+            {cx + dy, cy - dx}, {cx + dx, cy - dy}
+        };
+        
+        for (int i = 0; i < 8; i++) {
+            int px = points[i][0];
+            int py = points[i][1];
+            if (px >= 0 && px < MATRIX_WIDTH && py >= 0 && py < MATRIX_HEIGHT) {
+                set_pixel(px, py, range_color);
+            }
+        }
+        
+        if (err <= 0) {
+            dy += 1;
+            err += 2 * dy + 1;
+        }
+        
+        if (err > 0) {
+            dx -= 1;
+            err -= 2 * dx + 1;
         }
     }
 }
@@ -416,7 +453,6 @@ void projectile_draw(const Projectile* proj) {
     int y = (int)proj->y;
 
     if (x >= 0 && x < MATRIX_WIDTH && y >= 0 && y < MATRIX_HEIGHT) {
-        //framebuffer[y][x] = proj->color;
         set_pixel(x, y, proj->color);
     }
 }
@@ -426,7 +462,12 @@ void projectile_draw(const Projectile* proj) {
 // ============================================================================
 
 void game_init(GameState* game) {
-    memset(game, 0, sizeof(GameState));
+    // Zero-initialize all fields properly
+    game->enemy_count = 0;
+    game->tower_count = 0;
+    game->projectile_count = 0;
+    game->path_length = 0;
+    game->tower_slot_count = 0;
 
     game->money = 200;
     game->lives = 20;
@@ -535,17 +576,7 @@ void game_update(GameState* game, float dt) {
 }
 
 void game_draw(const GameState* game) {
-    // Draw path
-    for (int i = 0; i < game->path_length; i++) {
-        int x = game->path[i].x;
-        int y = game->path[i].y;
-        if (x >= 0 && x < MATRIX_WIDTH && y >= 0 && y < MATRIX_HEIGHT) {
-            //framebuffer[y][x] = Color{100, 100, 100};
-            set_pixel(x, y, Color(100,100,100));
-        }
-    }
-
-    // Draw tower slots
+    // Draw tower slots (not occupied = gold, occupied = darker)
     for (int i = 0; i < game->tower_slot_count; i++) {
         int x = game->tower_slots[i].x;
         int y = game->tower_slots[i].y;
@@ -557,7 +588,6 @@ void game_draw(const GameState* game) {
                 int px = x + dx;
                 int py = y + dy;
                 if (px >= 0 && px < MATRIX_WIDTH && py >= 0 && py < MATRIX_HEIGHT) {
-                    framebuffer[py][px] = slot_color;
                     set_pixel(px, py, slot_color);
                 }
             }

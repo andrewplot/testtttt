@@ -152,41 +152,22 @@ static void check_tower_selection() {
 // -----------------------------------------------------------------------------
 // Joystick → choose tower slot index
 // -----------------------------------------------------------------------------
-
 static void handle_joystick() {
-    // Only check joystick when the flag is set (timer-based, every 25ms)
     if (!joystick_flag) return;
-    
-    joystick_flag = false;  // Clear the flag
+    joystick_flag = false;  // Clear flag ONCE
     
     JoystickDirection jx = sample_js_x();
-    JoystickDirection jy = sample_js_y();  // Read but ignore Y-axis
     bool sel = sample_js_select();
 
-    // Debug - print when values change
-    static JoystickDirection last_debug_jx = center;
-    static JoystickDirection last_debug_jy = center;
-    static bool last_debug_sel = false;
+    // === 1. NAVIGATION (X-axis) ===
+    static JoystickDirection last_jx = center;
     
-    if (jx != last_debug_jx || jy != last_debug_jy || sel != last_debug_sel) {
-        printf("[JS] X=%d, Y=%d, SEL=%d\n", jx, jy, sel);
-        last_debug_jx = jx;
-        last_debug_jy = jy;
-        last_debug_sel = sel;
-    }
-
-    // Only navigate if in placement mode
-    if (show_placement_mode && game.tower_slot_count > 0) {
-        // Navigate between slots using LEFT/RIGHT only (ignore Y-axis)
-        static JoystickDirection last_jx = center;
-        
-        // Only trigger on edge (transition from center to left/right)
-        if (jx == right && last_jx == center) {
+    if (show_placement_mode && game.tower_slot_count > 0 && jx != last_jx) {
+        if (jx == right) {
             current_slot_index++;
             if (current_slot_index >= game.tower_slot_count)
                 current_slot_index = 0;
             
-            // Skip occupied slots
             int attempts = 0;
             while (game.tower_slots[current_slot_index].occupied && attempts < game.tower_slot_count) {
                 current_slot_index++;
@@ -194,18 +175,13 @@ static void handle_joystick() {
                     current_slot_index = 0;
                 attempts++;
             }
-            
-            printf("→ RIGHT: Moved to slot %d at (%d, %d)\n", 
-                   current_slot_index,
-                   game.tower_slots[current_slot_index].x,
-                   game.tower_slots[current_slot_index].y);
+            printf("→ Slot %d\n", current_slot_index);
         } 
-        else if (jx == left && last_jx == center) {
+        else if (jx == left) {
             current_slot_index--;
             if (current_slot_index < 0)
                 current_slot_index = game.tower_slot_count - 1;
             
-            // Skip occupied slots
             int attempts = 0;
             while (game.tower_slots[current_slot_index].occupied && attempts < game.tower_slot_count) {
                 current_slot_index--;
@@ -213,63 +189,39 @@ static void handle_joystick() {
                     current_slot_index = game.tower_slot_count - 1;
                 attempts++;
             }
-            
-            printf("← LEFT: Moved to slot %d at (%d, %d)\n", 
-                   current_slot_index,
-                   game.tower_slots[current_slot_index].x,
-                   game.tower_slots[current_slot_index].y);
+            printf("← Slot %d\n", current_slot_index);
         }
-        
-        last_jx = jx;
     }
+    last_jx = jx;
 
-    // On button press (SELECT), place tower at current slot
-    // IMPORTANT: Only trigger on button press, NOT on Y-axis movement
+    // === 2. BUTTON (completely independent) ===
     static bool last_sel = false;
     
-    // Edge detection: transition from false to true (button just pressed)
-    // AND make sure we're not also moving on X or Y axis (to avoid accidental triggers)
-    if (sel && !last_sel && jx == center && jy == center) {
-        printf("=== SELECT BUTTON PRESSED (clean press) ===\n");
-        
-        if (show_placement_mode && game.tower_slot_count > 0) {
-            printf("=== ATTEMPTING TOWER PLACEMENT ===\n");
-            TowerSlot* slot = &game.tower_slots[current_slot_index];
+    if (sel != last_sel) {
+        if (sel) {  // Button just pressed
+            printf("=== BUTTON CLICK ===\n");
             
-            printf("Slot %d: pos=(%d,%d), occupied=%d\n",
-                   current_slot_index, slot->x, slot->y, slot->occupied);
-            printf("Selected tower: %d, Cost: %d, Money: %d\n",
-                   game.selected_tower, TOWER_STATS_TABLE[game.selected_tower].cost, game.money);
-
-            if (!slot->occupied) {
-                bool ok = game_place_tower(&game,
-                                           game.selected_tower,
-                                           slot->x,
-                                           slot->y);
-                if (ok) {
-                    slot->occupied = true;
-                    beep_ok();
-                    show_placement_mode = false;  // Exit placement mode after placing
-                    printf("✓ TOWER PLACED SUCCESSFULLY!\n");
-                    printf("Remaining money: %d, Tower count: %d\n", game.money, game.tower_count);
+            if (show_placement_mode && game.tower_slot_count > 0) {
+                TowerSlot* slot = &game.tower_slots[current_slot_index];
+                
+                if (!slot->occupied) {
+                    bool ok = game_place_tower(&game, game.selected_tower, slot->x, slot->y);
+                    if (ok) {
+                        slot->occupied = true;
+                        beep_ok();
+                        show_placement_mode = false;
+                        printf("✓ PLACED!\n");
+                    } else {
+                        error_sound();
+                    }
                 } else {
                     error_sound();
-                    printf("✗ PLACEMENT FAILED (insufficient funds)\n");
                 }
-            } else {
-                error_sound();
-                printf("✗ SLOT ALREADY OCCUPIED\n");
             }
-        } else {
-            printf("✗ Not in placement mode - scan RFID tag first\n");
         }
-    } else if (sel && !last_sel) {
-        printf("Button pressed but joystick not centered (X=%d, Y=%d) - ignoring\n", jx, jy);
+        last_sel = sel;
     }
-    
-    last_sel = sel;
 }
-
 // -----------------------------------------------------------------------------
 // Update game logic
 // -----------------------------------------------------------------------------

@@ -214,4 +214,7 @@ float distance_squared(float x1, float y1, float x2, float y2);
 float distance(float x1, float y1, float x2, float y2);
 bool is_in_range(float x1, float y1, float x2, float y2, float range);
 
+// Line drawing utility for visual effects (e.g., radar sweep)
+void matrix_draw_line(int x0, int y0, int x1, int y1, Color color);
+
 #endif // GAME_TYPES_H

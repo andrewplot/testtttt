@@ -7,6 +7,125 @@
 
 #include "matrix.hh"
 
+// Add to game.cpp - replace the tower_draw and game_draw functions
+
+#include "sprites.hh"
+
+// Helper function to convert game TowerType to hardware HardwareTowerType
+static HardwareTowerType game_to_hardware_tower(TowerType game_type) {
+    switch (game_type) {
+        case TOWER_MACHINE_GUN: return MACHINE_GUN;
+        case TOWER_CANNON:      return CANNON;
+        case TOWER_SNIPER:      return SNIPER;
+        case TOWER_RADAR:       return RADAR;
+        case TOWER_BLANK:
+        default:                return BLANK;
+    }
+}
+
+void tower_draw(const Tower* tower) {
+    // Get the appropriate sprite based on tower type
+    HardwareTowerType hw_type = game_to_hardware_tower(tower->type);
+    const Color* sprite = get_sprite(hw_type);
+    
+    int base_x = (int)tower->x - 2;  // Center the 4x4 sprite
+    int base_y = (int)tower->y - 2;
+    
+    // Draw the 4x4 tower sprite
+    for (int dy = 0; dy < 4; dy++) {
+        for (int dx = 0; dx < 4; dx++) {
+            int px = base_x + dx;
+            int py = base_y + dy;
+            if (px >= 0 && px < MATRIX_WIDTH && py >= 0 && py < MATRIX_HEIGHT) {
+                Color pixel_color = sprite[dy * 4 + dx];
+                set_pixel(px, py, pixel_color);
+            }
+        }
+    }
+    
+    // Draw radar sweep line if it's a radar tower
+    if (tower->is_radar) {
+        int cx = (int)tower->x;
+        int cy = (int)tower->y;
+        int sweep_length = (int)(tower->range) - 1;
+        int end_x = cx + (int)(cosf(tower->radar_angle) * sweep_length);
+        int end_y = cy + (int)(sinf(tower->radar_angle) * sweep_length);
+        
+        // Draw sweep line in cyan
+        matrix_draw_line(cx, cy, end_x, end_y, Color(0, 120, 120));
+    }
+}
+
+void game_draw(const GameState* game) {
+    // Draw tower slots using sprite
+    const Color* slot_sprite = get_sprite_tower_slot();
+    
+    for (int i = 0; i < game->tower_slot_count; i++) {
+        int x = game->tower_slots[i].x;
+        int y = game->tower_slots[i].y;
+        
+        // Draw 4x4 tower slot sprite centered on slot position
+        for (int dy = 0; dy < 4; dy++) {
+            for (int dx = 0; dx < 4; dx++) {
+                int px = x + dx - 2;  // Center the sprite
+                int py = y + dy - 2;
+                if (px >= 0 && px < MATRIX_WIDTH && py >= 0 && py < MATRIX_HEIGHT) {
+                    // If slot is occupied, darken the sprite
+                    Color slot_color = slot_sprite[dy * 4 + dx];
+                    if (game->tower_slots[i].occupied) {
+                        slot_color.r /= 3;
+                        slot_color.g /= 3;
+                        slot_color.b /= 3;
+                    }
+                    set_pixel(px, py, slot_color);
+                }
+            }
+        }
+    }
+
+    // Draw towers
+    for (int i = 0; i < game->tower_count; i++) {
+        tower_draw(&game->towers[i]);
+    }
+
+    // Draw enemies
+    for (int i = 0; i < game->enemy_count; i++) {
+        enemy_draw(&game->enemies[i]);
+    }
+
+    // Draw projectiles
+    for (int i = 0; i < game->projectile_count; i++) {
+        projectile_draw(&game->projectiles[i]);
+    }
+}
+
+// Helper function to draw a line (needed for radar sweep)
+void matrix_draw_line(int x0, int y0, int x1, int y1, Color color) {
+    int dx = abs(x1 - x0);
+    int dy = abs(y1 - y0);
+    int sx = (x0 < x1) ? 1 : -1;
+    int sy = (y0 < y1) ? 1 : -1;
+    int err = dx - dy;
+    
+    while (true) {
+        if (x0 >= 0 && x0 < MATRIX_WIDTH && y0 >= 0 && y0 < MATRIX_HEIGHT) {
+            set_pixel(x0, y0, color);
+        }
+        
+        if (x0 == x1 && y0 == y1) break;
+        
+        int e2 = 2 * err;
+        if (e2 > -dy) {
+            err -= dy;
+            x0 += sx;
+        }
+        if (e2 < dx) {
+            err += dx;
+            y0 += sy;
+        }
+    }
+}
+
 // ============================================================================
 // ENEMY STATS TABLE (replaces Python ENEMY_TYPES dict)
 // ============================================================================
@@ -309,29 +428,6 @@ void tower_update(Tower* tower, float dt, GameState* game) {
     }
 }
 
-void tower_draw(const Tower* tower) {
-    int x = (int)tower->x;
-    int y = (int)tower->y;
-
-    for (int dy = -1; dy <= 1; dy++) {
-        for (int dx = -1; dx <= 1; dx++) {
-            int px = x + dx;
-            int py = y + dy;
-            if (px >= 0 && px < MATRIX_WIDTH && py >= 0 && py < MATRIX_HEIGHT) {
-                set_pixel(px, py, tower->color);
-            }
-        }
-    }
-
-    if (tower->is_radar) {
-        int tip_x = x + (int)(cosf(tower->radar_angle) * 3.0f);
-        int tip_y = y + (int)(sinf(tower->radar_angle) * 3.0f);
-        if (tip_x >= 0 && tip_x < MATRIX_WIDTH && tip_y >= 0 && tip_y < MATRIX_HEIGHT) {
-            set_pixel(tip_x, tip_y, Color(0, 255, 255));
-        }
-    }
-}
-
 void draw_tower_range(int16_t x, int16_t y, float range) {
     // Draw a circle showing the tower's range
     // Using midpoint circle algorithm
@@ -573,39 +669,4 @@ void game_update(GameState* game, float dt) {
         }
     }
     game->enemy_count = write_index;
-}
-
-void game_draw(const GameState* game) {
-    // Draw tower slots (not occupied = gold, occupied = darker)
-    for (int i = 0; i < game->tower_slot_count; i++) {
-        int x = game->tower_slots[i].x;
-        int y = game->tower_slots[i].y;
-        Color slot_color = game->tower_slots[i].occupied ?
-                           Color{60, 50, 0} : Color{128, 107, 0};
-
-        for (int dy = -2; dy < 2; dy++) {
-            for (int dx = -2; dx < 2; dx++) {
-                int px = x + dx;
-                int py = y + dy;
-                if (px >= 0 && px < MATRIX_WIDTH && py >= 0 && py < MATRIX_HEIGHT) {
-                    set_pixel(px, py, slot_color);
-                }
-            }
-        }
-    }
-
-    // Draw towers
-    for (int i = 0; i < game->tower_count; i++) {
-        tower_draw(&game->towers[i]);
-    }
-
-    // Draw enemies
-    for (int i = 0; i < game->enemy_count; i++) {
-        enemy_draw(&game->enemies[i]);
-    }
-
-    // Draw projectiles
-    for (int i = 0; i < game->projectile_count; i++) {
-        projectile_draw(&game->projectiles[i]);
-    }
 }

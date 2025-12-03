@@ -108,6 +108,7 @@ static TowerType convert_hw_to_game_tower(HardwareTowerType hw) {
 static void check_tower_selection() {
     // Only check when RFID flag is set (timer-based, every 1 second)
     if (!rfid_flag) return;
+    victory_sound();
     
     rfid_flag = false;  // Clear the flag
     
@@ -287,21 +288,8 @@ static void render_oled_ui() {
     char line1[17];
     char line2[17];
 
-    if (show_placement_mode) {
-        // Show tower selection info when in placement mode
-        const char* tower_names[] = {"MG", "Cannon", "Sniper", "Radar"};
-        const TowerStats* stats = &TOWER_STATS_TABLE[game.selected_tower];
-        
-        snprintf(line1, sizeof(line1), "%s $%d R%.0f",
-                 tower_names[game.selected_tower],
-                 stats->cost,
-                 stats->range);
-        snprintf(line2, sizeof(line2), "Money:%4d", game.money);
-    } else {
-        // Normal game info
-        snprintf(line1, sizeof(line1), "Money:%4d", game.money);
-        snprintf(line2, sizeof(line2), "Lives:%3d", game.lives);
-    }
+    snprintf(line1, sizeof(line1), "Money:%4d", game.money);
+    snprintf(line2, sizeof(line2), "Lives:%3d", game.lives);
 
     oled_print(line1, line2);
 }

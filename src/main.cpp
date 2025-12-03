@@ -1,4 +1,4 @@
-// main.cpp - OPTIMIZED VERSION
+// main.cpp - OPTIMIZED VERSION WITH BUTTON-TRIGGERED RFID
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
@@ -16,11 +16,6 @@
 #include "pin-definitions.hh"
 #include "wave_system.h"
 
-/*
-add rfid button
-fix tower projectiles
-maybe remove target range circle*/
-
 // Forward declarations for LED matrix driver functions
 void init_matrix();
 void swap_frames();
@@ -37,6 +32,9 @@ uint32_t last_time_ms = 0;
 // Cursor over tower slots
 int current_slot_index = 0;
 bool show_placement_mode = false;
+
+// RFID scanning state
+bool rfid_scanning_mode = false;  // True when actively scanning for RFID
 
 // Track last scanned tower
 extern TowerType scanned_tower;
@@ -59,8 +57,6 @@ static void setup_hardware() {
     game_init(&game);
     game.selected_tower = TOWER_MACHINE_GUN;
     
-    // **OPTIMIZATION: Initialize map rendering ONCE**
-    // This pre-renders grass + path + decorations into a single buffer
     map_render_init(&game);
 
     // Initialize wave manager
@@ -74,12 +70,11 @@ static void setup_hardware() {
     
     printf("\n=== OPTIMIZATION ENABLED ===\n");
     printf("Static background pre-rendered\n");
-    printf("Memory saved: ~12 KB\n");
-    printf("Frame copy: 6 KB (instead of 18 KB drawn per frame)\n");
+    printf("RFID: Button-triggered (no continuous polling)\n");
     printf("===========================\n\n");
 }
 
-// Check if RFID selected a new tower
+// Convert hardware tower type to game tower type
 static TowerType convert_hw_to_game_tower(HardwareTowerType hw) {
     switch (hw) {
         case MACHINE_GUN: return TOWER_MACHINE_GUN;
@@ -91,42 +86,98 @@ static TowerType convert_hw_to_game_tower(HardwareTowerType hw) {
     }
 }
 
-static void check_tower_selection() {
-    if (!rfid_flag) return;
-    victory_sound();
-    
-    rfid_flag = false;
-    
-    HardwareTowerType hw_tower_scanned = sample_rfid();
-    TowerType game_tower = convert_hw_to_game_tower(hw_tower_scanned);
-    
-    if (game_tower != TOWER_BLANK && game_tower != last_scanned_tower) {
-        printf("=== NEW TOWER SCANNED: Hardware=%d, Game=%d ===\n", hw_tower_scanned, game_tower);
-        
-        game.selected_tower = game_tower;
-        scanned_tower = game_tower;
-        
-        show_placement_mode = true;
-        current_slot_index = 0;
-        
-        const TowerStats* stats = &TOWER_STATS_TABLE[game_tower];
-        printf("Selected tower - Cost: %d, Range: %.1f, Damage: %d\n",
-               stats->cost, stats->range, stats->damage);
-        
-        last_scanned_tower = game_tower;
-    }
-}
-
-// Joystick controls
+// Joystick controls with RFID scanning trigger
 static void handle_joystick() {
     if (!joystick_flag) return;
     joystick_flag = false;
     
     JoystickDirection jx = sample_js_x();
+    JoystickDirection jy = sample_js_y();
     bool sel = sample_js_select();
 
     static JoystickDirection last_jx = center;
+    static JoystickDirection last_jy = center;
+    static bool last_sel = false;
     
+    // ========== BUTTON PRESS: START RFID SCANNING OR PLACE TOWER ==========
+    if (sel && !last_sel) {  // Button just pressed
+        printf("=== BUTTON PRESSED ===\n");
+        
+        // If not in placement mode, start RFID scanning
+        if (!show_placement_mode) {
+            rfid_scanning_mode = true;
+            printf("RFID scanning mode ACTIVATED - scan a tower tag now!\n");
+            beep_ok();
+        }
+        // If in placement mode, try to place the tower
+        else {
+            TowerSlot* slot = &game.tower_slots[current_slot_index];
+            
+            if (!slot->occupied) {
+                bool ok = game_place_tower(&game, game.selected_tower, slot->x, slot->y);
+                if (ok) {
+                    slot->occupied = true;
+                    beep_ok();
+                    show_placement_mode = false;
+                    rfid_scanning_mode = false;  // Stop scanning after placement
+                    printf("✓ TOWER PLACED!\n");
+                } else {
+                    error_sound();
+                    printf("✗ Cannot place tower (not enough money?)\n");
+                }
+            } else {
+                error_sound();
+                printf("✗ Slot already occupied\n");
+            }
+        }
+    }
+    
+    // ========== RFID SCANNING (ONLY WHEN ACTIVE) ==========
+    if (rfid_scanning_mode) {
+        HardwareTowerType hw_tower_scanned = sample_rfid();
+        TowerType game_tower = convert_hw_to_game_tower(hw_tower_scanned);
+        
+        if (game_tower != TOWER_BLANK) {
+            printf("=== TOWER SCANNED: Hardware=%d, Game=%d ===\n", hw_tower_scanned, game_tower);
+            
+            game.selected_tower = game_tower;
+            scanned_tower = game_tower;
+            
+            show_placement_mode = true;
+            current_slot_index = 0;
+            
+            // Find first available slot
+            int attempts = 0;
+            while (game.tower_slots[current_slot_index].occupied && attempts < game.tower_slot_count) {
+                current_slot_index++;
+                if (current_slot_index >= game.tower_slot_count)
+                    current_slot_index = 0;
+                attempts++;
+            }
+            
+            const TowerStats* stats = &TOWER_STATS_TABLE[game_tower];
+            printf("Selected tower - Cost: %d, Range: %.1f, Damage: %d\n",
+                   stats->cost, stats->range, stats->damage);
+            
+            last_scanned_tower = game_tower;
+            rfid_scanning_mode = false;  // Stop scanning once tower is selected
+            victory_sound();
+        }
+    }
+    
+    // ========== JOYSTICK UP/DOWN: CANCEL ACTIONS ==========
+    if (jy != last_jy) {
+        if (jy == up || jy == down) {
+            if (show_placement_mode || rfid_scanning_mode) {
+                show_placement_mode = false;
+                rfid_scanning_mode = false;
+                printf("✗ Action cancelled\n");
+                error_sound();
+            }
+        }
+    }
+    
+    // ========== JOYSTICK LEFT/RIGHT: CHANGE SLOT ==========
     if (show_placement_mode && game.tower_slot_count > 0 && jx != last_jx) {
         if (jx == right) {
             current_slot_index++;
@@ -157,34 +208,10 @@ static void handle_joystick() {
             printf("← Slot %d\n", current_slot_index);
         }
     }
-    last_jx = jx;
-
-    static bool last_sel = false;
     
-    if (sel != last_sel) {
-        if (sel) {
-            printf("=== BUTTON CLICK ===\n");
-            
-            if (show_placement_mode && game.tower_slot_count > 0) {
-                TowerSlot* slot = &game.tower_slots[current_slot_index];
-                
-                if (!slot->occupied) {
-                    bool ok = game_place_tower(&game, game.selected_tower, slot->x, slot->y);
-                    if (ok) {
-                        slot->occupied = true;
-                        beep_ok();
-                        show_placement_mode = false;
-                        printf("✓ PLACED!\n");
-                    } else {
-                        error_sound();
-                    }
-                } else {
-                    error_sound();
-                }
-            }
-        }
-        last_sel = sel;
-    }
+    last_jx = jx;
+    last_jy = jy;
+    last_sel = sel;
 }
 
 // Update game logic with wave system
@@ -236,16 +263,15 @@ static void update_game() {
     game_update(&game, dt);
 }
 
-// **OPTIMIZED: Render static background once, then draw dynamic objects**
+// Render game to framebuffer
 static void render_game_to_framebuffer() {
-    // STEP 1: Copy pre-rendered static background (grass + path + decorations)
-    // This is a single fast memcpy instead of drawing thousands of pixels!
+    // Copy pre-rendered static background
     map_render_draw_static();
 
-    // STEP 2: Draw dynamic game objects on top
+    // Draw dynamic game objects
     game_draw(&game);
 
-    // STEP 3: Draw UI elements (placement mode, range indicators)
+    // Draw UI elements (placement mode, range indicators)
     if (show_placement_mode && game.tower_slot_count > 0) {
         TowerSlot* slot = &game.tower_slots[current_slot_index];
         
@@ -279,17 +305,25 @@ static void render_oled_ui() {
     char line1[17];
     char line2[17];
 
-
-    snprintf(line1, sizeof(line1), "HP:%d Score:%d", 
-            game.lives,
-            game.score);
-
-    snprintf(line2, sizeof(line2), "$%d Wave: %d/%d", 
-             game.money, 
-             wave_manager.current_wave + 1,
-             wave_manager_get_total_waves());
-    
-
+    // Show RFID scanning status on OLED
+    if (rfid_scanning_mode) {
+        snprintf(line1, sizeof(line1), "SCAN RFID TAG!");
+        snprintf(line2, sizeof(line2), "UP/DOWN=Cancel");
+    } else if (show_placement_mode) {
+        const char* tower_names[] = {"MachGun", "Cannon", "Sniper", "Radar"};
+        snprintf(line1, sizeof(line1), "%s $%d", 
+                tower_names[game.selected_tower],
+                TOWER_STATS_TABLE[game.selected_tower].cost);
+        snprintf(line2, sizeof(line2), "L/R=Slot SEL=OK");
+    } else {
+        snprintf(line1, sizeof(line1), "HP:%d Score:%d", 
+                game.lives,
+                game.score);
+        snprintf(line2, sizeof(line2), "$%d Wave:%d/%d", 
+                 game.money, 
+                 wave_manager.current_wave + 1,
+                 wave_manager_get_total_waves());
+    }
 
     oled_print(line1, line2);
 }
@@ -312,13 +346,14 @@ int main() {
 
     printf("\n=== TOWER DEFENSE GAME STARTED ===\n");
     printf("Instructions:\n");
-    printf("1. Scan RFID tag to select tower type\n");
-    printf("2. Use joystick LEFT/RIGHT to choose slot\n");
-    printf("3. Press joystick SELECT button to place tower\n");
+    printf("1. Press joystick SELECT button to activate RFID scanning\n");
+    printf("2. Scan RFID tag to select tower type\n");
+    printf("3. Use joystick LEFT/RIGHT to choose slot\n");
+    printf("4. Press SELECT button again to place tower\n");
+    printf("5. Use joystick UP/DOWN to cancel at any time\n");
     printf("================================\n\n");
 
     while (true) {
-        // check_tower_selection();
         handle_joystick();
         
         update_game();

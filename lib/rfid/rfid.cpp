@@ -6,9 +6,7 @@
 #include "rfid_reader_uart.hh"
 #include "buzzer_pwm.hh"
 
-#define RFID_TIMER_MS 2000
-
-volatile bool rfid_flag = false;
+// Remove automatic timer - RFID only reads on demand now
 uint8_t uid[10];
 uint8_t uid_len;
 
@@ -22,26 +20,9 @@ HardwareTowerType match_monkey(uint8_t rfid_tag[10]) {
     return BLANK;
 }
 
-void rfid_isr() {
-    hw_clear_bits(&timer0_hw->intr, 1 << 1);
-
-    rfid_flag = true;
-
-    uint32_t target = timer0_hw->timerawl + RFID_TIMER_MS * 1000;
-    timer0_hw->alarm[1] = target;
-}
-
 void init_rfid() {
     pn532_uart_reader_init();
-    
-    timer0_hw->inte |= 1 << 1;
-
-    uint alarm1_irq = timer_hardware_alarm_get_irq_num(timer0_hw, 1);
-    irq_set_exclusive_handler(alarm1_irq, rfid_isr);
-    irq_set_enabled(alarm1_irq, true);
-
-    uint32_t target = timer0_hw->timerawl + RFID_TIMER_MS * 1000;
-    timer0_hw->alarm[1] = target;
+    printf("RFID initialized (on-demand mode)\n");
 }
 
 HardwareTowerType sample_rfid() {

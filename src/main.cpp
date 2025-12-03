@@ -1,4 +1,3 @@
-// main.cpp – RP2350 + PicoSDK + PlatformIO tower defense game
 
 #include <stdio.h>
 #include <math.h>
@@ -13,53 +12,42 @@
 #include "oled_display.hh"
 #include "buzzer_pwm.hh"
 #include "rfid_bridge.hh"
-#include "rfid.hh"  // For sample_rfid() direct call
+#include "rfid.hh"
 #include "pin-definitions.hh"
+#include "wave_system.h"  // NEW: Wave system
 
 
 /*
-
 4. wave system
 5. start sequence + banner planes + death sequence
-6. make decorations nicer
+6. OPTIMIZATIONS
 7. place towers anywhere!
 8. make towers rotate and track
 9. abilities
 */
 
-
-
-
-// -----------------------------------------------------------------------------
 // Forward declarations for LED matrix driver functions
-// -----------------------------------------------------------------------------
-
 void init_matrix();
 void swap_frames();
 void render_frame();
 void set_pixel(int x, int y, Color color);
 
-// -----------------------------------------------------------------------------
 // Global game data
-// -----------------------------------------------------------------------------
-
 GameState game;
+WaveManager wave_manager;  // NEW: Wave manager
 Color framebuffer[MATRIX_HEIGHT][MATRIX_WIDTH];
 
 uint32_t last_time_ms = 0;
 
 // Cursor over tower slots
 int current_slot_index = 0;
-bool show_placement_mode = false;  // Track if user is in tower placement mode
+bool show_placement_mode = false;
 
 // Track last scanned tower to avoid repeated triggers
-extern TowerType scanned_tower;  // Defined in rfid_bridge.cpp
+extern TowerType scanned_tower;
 TowerType last_scanned_tower = TOWER_BLANK;
 
-// -----------------------------------------------------------------------------
 // Initialize everything
-// -----------------------------------------------------------------------------
-
 static void setup_hardware() {
     stdio_init_all();
 
@@ -69,28 +57,27 @@ static void setup_hardware() {
     rfid_setup();
     init_oled();
 
-    // buzzer on whatever pin your board uses (from pin-definitions.hh)
     buzzer_pwm_init();
-    buzzer_set_volume(40);  // 40% duty
+    buzzer_set_volume(40);
 
     // Initialize game
     game_init(&game);
     game.selected_tower = TOWER_MACHINE_GUN;
     
-    // Initialize map rendering (generates textures)
+    // Initialize map rendering
     map_render_init(&game);
 
-    // Spawn one test enemy so you see something move
-    game_spawn_enemy(&game, ENEMY_SCOUT);
+    // NEW: Initialize wave manager
+    wave_manager_init(&wave_manager);
+    
+    // NEW: Start wave 1 automatically
+    wave_manager_start_wave(&wave_manager, 0, &game);
+    start_sound();
 
     last_time_ms = to_ms_since_boot(get_absolute_time());
 }
 
-// -----------------------------------------------------------------------------
 // Check if RFID selected a new tower and enter placement mode
-// -----------------------------------------------------------------------------
-
-// Helper to convert hardware to game tower type
 static TowerType convert_hw_to_game_tower(HardwareTowerType hw) {
     switch (hw) {
         case MACHINE_GUN: return TOWER_MACHINE_GUN;
@@ -103,33 +90,23 @@ static TowerType convert_hw_to_game_tower(HardwareTowerType hw) {
 }
 
 static void check_tower_selection() {
-    // Only check when RFID flag is set (timer-based, every 1 second)
     if (!rfid_flag) return;
     victory_sound();
     
-    rfid_flag = false;  // Clear the flag
+    rfid_flag = false;
     
-    // Sample RFID once per timer period (returns HardwareTowerType)
     HardwareTowerType hw_tower_scanned = sample_rfid();
-    
-    // Convert to game TowerType
     TowerType game_tower = convert_hw_to_game_tower(hw_tower_scanned);
     
-    // Check if a new tower was scanned (not BLANK and different from last)
     if (game_tower != TOWER_BLANK && game_tower != last_scanned_tower) {
         printf("=== NEW TOWER SCANNED: Hardware=%d, Game=%d ===\n", hw_tower_scanned, game_tower);
         
-        // Update selected tower type and scanned_tower global
         game.selected_tower = game_tower;
         scanned_tower = game_tower;
         
-        // Enter placement mode
         show_placement_mode = true;
-        
-        // Reset cursor to first available slot
         current_slot_index = 0;
         
-        // Print tower info
         const TowerStats* stats = &TOWER_STATS_TABLE[game_tower];
         printf("Selected tower - Cost: %d, Range: %.1f, Damage: %d\n",
                stats->cost, stats->range, stats->damage);
@@ -138,17 +115,15 @@ static void check_tower_selection() {
     }
 }
 
-// -----------------------------------------------------------------------------
 // Joystick → choose tower slot index
-// -----------------------------------------------------------------------------
 static void handle_joystick() {
     if (!joystick_flag) return;
-    joystick_flag = false;  // Clear flag ONCE
+    joystick_flag = false;
     
     JoystickDirection jx = sample_js_x();
     bool sel = sample_js_select();
 
-    // === 1. NAVIGATION (X-axis) ===
+    // Navigation (X-axis)
     static JoystickDirection last_jx = center;
     
     if (show_placement_mode && game.tower_slot_count > 0 && jx != last_jx) {
@@ -183,11 +158,11 @@ static void handle_joystick() {
     }
     last_jx = jx;
 
-    // === 2. BUTTON (completely independent) ===
+    // Button
     static bool last_sel = false;
     
     if (sel != last_sel) {
-        if (sel) {  // Button just pressed
+        if (sel) {
             printf("=== BUTTON CLICK ===\n");
             
             if (show_placement_mode && game.tower_slot_count > 0) {
@@ -211,10 +186,8 @@ static void handle_joystick() {
         last_sel = sel;
     }
 }
-// -----------------------------------------------------------------------------
-// Update game logic
-// -----------------------------------------------------------------------------
 
+// Update game logic - NEW VERSION WITH WAVE SYSTEM
 static void update_game() {
     uint32_t now = to_ms_since_boot(get_absolute_time());
     float dt = (now - last_time_ms) / 1000.0f;
@@ -223,56 +196,81 @@ static void update_game() {
 
     game.game_time += dt;
 
-    // simple periodic enemy spawn (if game.cpp doesn't already do waves)
-    static float spawn_timer = 0.0f;
-    spawn_timer += dt;
-    if (spawn_timer > 3.0f && game.enemy_count < MAX_ENEMIES) {
-        game_spawn_enemy(&game, ENEMY_SCOUT);
-        spawn_timer = 0.0f;
+    // NEW: Update wave manager (spawns enemies at scheduled times)
+    wave_manager_update(&wave_manager, dt, &game);
+    
+    // NEW: Check if wave is complete
+    static bool wave_just_completed = false;
+    if (wave_manager_is_complete(&wave_manager, &game)) {
+        if (!wave_just_completed) {
+            wave_just_completed = true;
+            
+            printf("\n*** WAVE %d COMPLETE! ***\n", wave_manager.current_wave + 1);
+            victory_sound();
+            
+            // Check if there are more waves
+            if (wave_manager.current_wave + 1 < wave_manager_get_total_waves()) {
+                printf("Next wave starting in 3 seconds...\n\n");
+                sleep_ms(3000);
+                
+                // Start next wave
+                wave_manager_start_wave(&wave_manager, wave_manager.current_wave + 1, &game);
+                start_sound();
+                wave_just_completed = false;
+            } else {
+                printf("\n*** ALL WAVES COMPLETE! VICTORY! ***\n");
+                printf("Final Score: %d\n", game.score);
+                printf("Money Remaining: %d\n", game.money);
+                printf("Lives Remaining: %d\n", game.lives);
+                printf("================================\n\n");
+                
+                // Game complete - restart from wave 1
+                sleep_ms(5000);
+                wave_manager_start_wave(&wave_manager, 0, &game);
+                start_sound();
+                wave_just_completed = false;
+            }
+        }
+    } else {
+        wave_just_completed = false;
     }
 
+    // Update game logic
     game_update(&game, dt);
 }
 
-// -----------------------------------------------------------------------------
 // Render game into framebuffer, then to LED matrix + OLED
-// -----------------------------------------------------------------------------
 static void render_game_to_framebuffer() {
-    // 1. Draw map (background + path with textures)
+    // Draw map (background + path with textures)
     map_render_draw(&game);
     
-    // 2. Draw decorations (trees, rocks, lakes) - BEFORE game objects
+    // Draw decorations (trees, rocks, lakes) - BEFORE game objects
     map_render_decorations();
 
-    // 3. Draw game objects (tower slots, enemies, towers, projectiles)
+    // Draw game objects (tower slots, enemies, towers, projectiles)
     game_draw(&game);
 
-    // 4. If in placement mode, show range indicator at current slot
+    // If in placement mode, show range indicator at current slot
     if (show_placement_mode && game.tower_slot_count > 0) {
         TowerSlot* slot = &game.tower_slots[current_slot_index];
         
-        // Get range for the selected tower type
         const TowerStats* stats = &TOWER_STATS_TABLE[game.selected_tower];
         draw_tower_range(slot->x, slot->y, stats->range);
         
-        // Highlight current tower slot cursor (on top of range)
-        // Blink on/off based on game time (2 Hz = 2 blinks per second)
         bool blink_on = ((int)(game.game_time * 2.0f) % 2) == 0;
         
         if (blink_on) {
             int cx = slot->x;
             int cy = slot->y;
             
-            // Draw a 5x5 highlight box
             for (int dy = -2; dy <= 2; ++dy) {
                 for (int dx = -2; dx <= 2; ++dx) {
-                    // Only draw border, not filled
                     if (abs(dx) == 2 || abs(dy) == 2) {
                         int px = cx + dx;
                         int py = cy + dy;
                         if (px >= 0 && px < MATRIX_WIDTH &&
                             py >= 0 && py < MATRIX_HEIGHT) {
-                            set_pixel(px, py, Color(100, 100, 255));  // Bright blue
+                            set_pixel(px, py, Color(100, 100, 255));
                         }
                     }
                 }
@@ -281,19 +279,26 @@ static void render_game_to_framebuffer() {
     }
 }
 
+// NEW: Updated OLED UI to show wave information
 static void render_oled_ui() {
     char line1[17];
     char line2[17];
 
-    snprintf(line1, sizeof(line1), "Money:%4d", game.money);
-    snprintf(line2, sizeof(line2), "Lives:%3d", game.lives);
+    // Line 1: Money and wave number
+    snprintf(line1, sizeof(line1), "$%d W%d/%d", 
+             game.money, 
+             wave_manager.current_wave + 1,
+             wave_manager_get_total_waves());
+    
+    // Line 2: Lives and score
+    snprintf(line2, sizeof(line2), "HP:%d S:%d", 
+             game.lives,
+             game.score);
 
     oled_print(line1, line2);
 }
 
-// -----------------------------------------------------------------------------
-// Main
-// -----------------------------------------------------------------------------
+// Core 1 rendering
 void render_matrix() {
     for (;;) {
         render_frame();
@@ -304,7 +309,7 @@ void render_matrix() {
     }
 }
 
-
+// Main
 int main() {
     setup_hardware();
     multicore_launch_core1(render_matrix);
@@ -317,16 +322,15 @@ int main() {
     printf("================================\n\n");
 
     while (true) {
-        // Check RFID and joystick using timer-based flags (no more sample_peripherals)
-        check_tower_selection();  // Only runs when rfid_flag is set (1 second timer)
-        handle_joystick();        // Only runs when joystick_flag is set (25ms timer)
+        check_tower_selection();
+        handle_joystick();
         
         update_game();
         render_game_to_framebuffer();
         render_oled_ui();
         multicore_fifo_push_blocking(1);
 
-        sleep_ms(40);  // ~25 FPS
+        sleep_ms(60);
     }
 
     return 0;

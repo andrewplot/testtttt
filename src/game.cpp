@@ -1,4 +1,4 @@
-// game.cpp - Core game implementation
+// game.cpp - Core game implementation with FIXED PROJECTILES
 #include "game_types.h"
 
 #include <math.h>
@@ -6,9 +6,6 @@
 #include <stdio.h>
 
 #include "matrix.hh"
-
-// Add to game.cpp - replace the tower_draw and game_draw functions
-
 #include "sprites.hh"
 
 // Helper function to convert game TowerType to hardware HardwareTowerType
@@ -127,7 +124,7 @@ void matrix_draw_line(int x0, int y0, int x1, int y1, Color color) {
 }
 
 // ============================================================================
-// ENEMY STATS TABLE (replaces Python ENEMY_TYPES dict)
+// ENEMY STATS TABLE
 // ============================================================================
 
 const EnemyStats ENEMY_STATS_TABLE[] = {
@@ -212,7 +209,7 @@ const TowerStats TOWER_STATS_TABLE[] = {
         .damage = 5,
         .range = 16.0f,
         .fire_rate = 1.5f,
-        .projectile_speed = 999.0f,  // instant-ish
+        .projectile_speed = 20.0f,  // Fast but not instant
         .color = {200, 255, 200},
         .can_see_invisible = true,
         .is_radar = false,
@@ -367,10 +364,15 @@ void tower_shoot(Tower* tower, uint8_t target_index, GameState* game) {
     Projectile* proj = &game->projectiles[game->projectile_count];
 
     Color proj_color = Color{255, 255, 0};  // Yellow projectiles
+    
+    // Store POINTER to enemy (via target position) instead of index
+    Enemy* target = &game->enemies[target_index];
+    
     projectile_init(proj,
                     tower->x,
                     tower->y,
-                    target_index,
+                    target->x,  // Target X position
+                    target->y,  // Target Y position
                     tower->damage,
                     tower->projectile_speed,
                     proj_color,
@@ -412,7 +414,7 @@ void tower_update(Tower* tower, float dt, GameState* game) {
     for (int i = 0; i < game->enemy_count; i++) {
         Enemy* e = &game->enemies[i];
         if (!e->alive) continue;
-        if (e->invisible && !tower->can_see_invisible) continue;
+        if (e->invisible && !tower->can_see_invisible && !e->revealed) continue;
 
         if (is_in_range(tower->x, tower->y, e->x, e->y, tower->range)) {
             if (e->path_progress > best_progress) {
@@ -471,52 +473,88 @@ void draw_tower_range(int16_t x, int16_t y, float range) {
 }
 
 // ============================================================================
-// PROJECTILE IMPLEMENTATION
+// PROJECTILE IMPLEMENTATION - FIXED VERSION
 // ============================================================================
 
-void projectile_init(Projectile* proj, float x, float y, uint8_t target_idx,
+void projectile_init(Projectile* proj, float x, float y, 
+                     float target_x, float target_y,
                      uint8_t damage, float speed, Color color, uint8_t splash) {
     proj->x = x;
     proj->y = y;
-    proj->target_index = target_idx;
+    proj->target_x = target_x;  // Store target position
+    proj->target_y = target_y;
     proj->damage = damage;
     proj->speed = speed;
     proj->color = color;
     proj->splash_radius = splash;
     proj->active = true;
+    
+    // Calculate direction to target
+    float dx = target_x - x;
+    float dy = target_y - y;
+    float dist = sqrtf(dx * dx + dy * dy);
+    
+    if (dist > 0.0f) {
+        proj->vx = (dx / dist) * speed;
+        proj->vy = (dy / dist) * speed;
+    } else {
+        proj->vx = 0.0f;
+        proj->vy = 0.0f;
+    }
 }
 
 bool projectile_update(Projectile* proj, float dt, GameState* game) {
     if (!proj->active) return true;
 
-    Enemy* target = &game->enemies[proj->target_index];
+    // Move projectile
+    proj->x += proj->vx * dt;
+    proj->y += proj->vy * dt;
 
-    if (!target->alive) {
-        proj->active = false;
-        return true;
+    // Check if projectile hit any enemy
+    Enemy* hit_enemy = NULL;
+    int hit_index = -1;
+    float closest_dist = 1.0f;  // Hit radius
+    
+    for (int i = 0; i < game->enemy_count; i++) {
+        Enemy* e = &game->enemies[i];
+        if (!e->alive) continue;
+        
+        float dist = distance(proj->x, proj->y, e->x, e->y);
+        if (dist < closest_dist) {
+            closest_dist = dist;
+            hit_enemy = e;
+            hit_index = i;
+        }
     }
 
-    float dx = target->x - proj->x;
-    float dy = target->y - proj->y;
-    float dist = sqrtf(dx * dx + dy * dy);
-
-    if (dist < 0.3f) {
-        target->health -= proj->damage;
-        if (target->health <= 0) {
-            target->alive = false;
-            const EnemyStats* stats = &ENEMY_STATS_TABLE[target->type];
+    // If we hit an enemy
+    if (hit_enemy != NULL) {
+        // Damage the target
+        hit_enemy->health -= proj->damage;
+        
+        printf("HIT! Enemy %d took %d damage (HP: %d/%d)\n", 
+               hit_index, proj->damage, hit_enemy->health, hit_enemy->max_health);
+        
+        if (hit_enemy->health <= 0) {
+            hit_enemy->alive = false;
+            const EnemyStats* stats = &ENEMY_STATS_TABLE[hit_enemy->type];
             game->money += stats->reward;
             game->score += stats->reward * 10;
+            printf("KILL! +$%d +%d score\n", stats->reward, stats->reward * 10);
         }
 
+        // Splash damage
         if (proj->splash_radius > 0) {
             float splash_r = (float)proj->splash_radius;
             for (int i = 0; i < game->enemy_count; i++) {
-                if (i == proj->target_index) continue;
+                if (i == hit_index) continue;  // Already damaged
                 Enemy* e = &game->enemies[i];
                 if (!e->alive) continue;
+                
                 if (distance(proj->x, proj->y, e->x, e->y) <= splash_r) {
                     e->health -= proj->damage;
+                    printf("SPLASH! Enemy %d took %d damage\n", i, proj->damage);
+                    
                     if (e->health <= 0) {
                         e->alive = false;
                         const EnemyStats* stats = &ENEMY_STATS_TABLE[e->type];
@@ -531,13 +569,12 @@ bool projectile_update(Projectile* proj, float dt, GameState* game) {
         return true;
     }
 
-    if (proj->speed <= 0.0f) proj->speed = 10.0f;
-
-    float vx = dx / dist;
-    float vy = dy / dist;
-
-    proj->x += vx * proj->speed * dt;
-    proj->y += vy * proj->speed * dt;
+    // Check if projectile is out of bounds
+    if (proj->x < -5 || proj->x > MATRIX_WIDTH + 5 ||
+        proj->y < -5 || proj->y > MATRIX_HEIGHT + 5) {
+        proj->active = false;
+        return true;
+    }
 
     return true;
 }
@@ -635,16 +672,19 @@ bool game_place_tower(GameState* game, TowerType type, int16_t x, int16_t y) {
 void game_update(GameState* game, float dt) {
     game->game_time += dt;
 
+    // Update towers (they shoot projectiles)
     for (int i = 0; i < game->tower_count; i++) {
         tower_update(&game->towers[i], dt, game);
     }
 
+    // Update projectiles (they move and check for hits)
     for (int i = 0; i < game->projectile_count; i++) {
         Projectile* proj = &game->projectiles[i];
         if (!proj->active) continue;
         projectile_update(proj, dt, game);
     }
 
+    // Remove inactive projectiles
     int write_index = 0;
     for (int i = 0; i < game->projectile_count; i++) {
         if (game->projectiles[i].active) {
@@ -656,11 +696,17 @@ void game_update(GameState* game, float dt) {
     }
     game->projectile_count = write_index;
 
-    write_index = 0;
+    // Update enemies (they move along path)
     for (int i = 0; i < game->enemy_count; i++) {
         Enemy* e = &game->enemies[i];
         if (!e->alive) continue;
         enemy_update(e, dt, game);
+    }
+
+    // Remove dead enemies
+    write_index = 0;
+    for (int i = 0; i < game->enemy_count; i++) {
+        Enemy* e = &game->enemies[i];
         if (e->alive) {
             if (write_index != i) {
                 game->enemies[write_index] = *e;

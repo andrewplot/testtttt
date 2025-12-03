@@ -1,4 +1,4 @@
-// game_types.h
+// game_types.h - FIXED VERSION
 #ifndef GAME_TYPES_H
 #define GAME_TYPES_H
 
@@ -113,15 +113,18 @@ typedef struct {
 } Tower;
 
 // ============================================================================
-// Projectile system
+// Projectile system - FIXED VERSION
 // ============================================================================
 
 typedef struct {
     float     x;
     float     y;
-    uint8_t   target_index;
+    float     vx;          // Velocity X (direction * speed)
+    float     vy;          // Velocity Y (direction * speed)
+    float     target_x;    // Target position when fired
+    float     target_y;    // Target position when fired
     uint8_t   damage;
-    float     speed;          // 0 = instant
+    float     speed;
     Color     color;
     uint8_t   splash_radius;  // 0 = no splash
     bool      active;
@@ -189,11 +192,12 @@ void tower_update(Tower* tower, float dt, GameState* game);
 void tower_draw(const Tower* tower);
 void draw_tower_range(int16_t x, int16_t y, float range);
 
-// Projectile functions
+// Projectile functions - FIXED VERSION
 void projectile_init(Projectile* proj,
                      float x,
                      float y,
-                     uint8_t target_idx,
+                     float target_x,      // Changed from target_idx
+                     float target_y,      // Added target_y
                      uint8_t damage,
                      float speed,
                      Color color,

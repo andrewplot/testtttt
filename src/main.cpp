@@ -343,6 +343,7 @@ void render_matrix() {
 int main() {
     setup_hardware();
     multicore_launch_core1(render_matrix);
+    int oled_counter = 0;
 
     printf("\n=== TOWER DEFENSE GAME STARTED ===\n");
     printf("Instructions:\n");
@@ -358,9 +359,12 @@ int main() {
         
         update_game();
         render_game_to_framebuffer();
-        render_oled_ui();
+        if (oled_counter % 3 == 0){
+            render_oled_ui();
+        }
         multicore_fifo_push_blocking(1);
 
+        oled_counter++;
         sleep_ms(60);
     }
 

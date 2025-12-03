@@ -18,9 +18,7 @@
 
 
 /*
-2. brighten background and reduce noise + fix enemy alignment on horizontal path
-    -fix path color
-3. tower sprites + slot sprites
+
 4. wave system
 5. start sequence + banner planes + death sequence
 6. make decorations nicer

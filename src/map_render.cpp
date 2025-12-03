@@ -235,17 +235,19 @@ void map_render_decorations() {
     draw_tree(5, 28);
     draw_tree(42, 29);
     draw_tree(60, 28);
+    draw_tree(24, 16);
+
     
     // Rocks
-    draw_rock(18, 2);
-    draw_rock(35, 2);
-    draw_rock(52, 2);
+    draw_rock(18, 20);
+    draw_rock(35, 8);
+    draw_rock(52, 1);
     draw_rock(18, 29);
     draw_rock(52, 29);
     
     // Lakes
-    draw_lake(8, 14);
-    draw_lake(58, 14);
+    draw_lake(8, 15);
+    draw_lake(42, 12);
 }
 
 // Draw a single tree (5x3 sprite)
@@ -278,7 +280,7 @@ void draw_tree(int x, int y) {
     // Bottom trunk extension (3 pixels wide)
     for (int dx = -1; dx <= 1; dx++) {
         int px = trunk_x + dx;
-        int py = trunk_y2 + 1;
+        int py = trunk_y2;
         if (px >= 0 && px < MATRIX_WIDTH && py >= 0 && py < MATRIX_HEIGHT) {
             set_pixel(px, py, Color{TREE_BROWN_R, TREE_BROWN_G, TREE_BROWN_B});
         }

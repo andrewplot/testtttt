@@ -274,14 +274,17 @@ static void render_oled_ui() {
     char line1[17];
     char line2[17];
 
-    snprintf(line1, sizeof(line1), "$%d Wave: %d/%d", 
+
+    snprintf(line1, sizeof(line1), "HP:%d Score:%d", 
+            game.lives,
+            game.score);
+
+    snprintf(line2, sizeof(line2), "$%d Wave: %d/%d", 
              game.money, 
              wave_manager.current_wave + 1,
              wave_manager_get_total_waves());
     
-    snprintf(line2, sizeof(line2), "HP:%d Score:%d", 
-             game.lives,
-             game.score);
+
 
     oled_print(line1, line2);
 }

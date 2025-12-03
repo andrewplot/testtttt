@@ -55,5 +55,5 @@ bool pn532_uart_read_uid(uint8_t *uid, uint8_t *uid_len) {
     }
     
     // Use a timeout appropriate for tag reading
-    return pn532_uart_read_passive_target(&pn532, uid, uid_len, 200);
+    return pn532_uart_read_passive_target(&pn532, uid, uid_len, 50);
 }

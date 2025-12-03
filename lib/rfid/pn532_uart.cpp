@@ -412,9 +412,9 @@ bool pn532_uart_read_passive_target(pn532_uart_t *dev,
     }
     
     // Give PN532 more time - ACK should arrive within 50ms
-    busy_wait_ms(50);
+    busy_wait_ms(25);
     
-    if (!read_ack(dev, 1000)) {
+    if (!read_ack(dev, 100)) {
         // If ACK fails, flush and return false
         uart_flush_rx(dev->uart);
         return false;

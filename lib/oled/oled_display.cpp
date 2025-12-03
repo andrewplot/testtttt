@@ -84,7 +84,7 @@ void init_oled() {
 void cd_write_line(int row, const char *s) {
     int addr_cmd = (row == 0) ? 0x80 : 0xC0;
     send_spi_cmd(spi1, addr_cmd);
-    sleep_ms(50);
+    sleep_ms(10);
 
     for (int i = 0; i < 16; i++) {
         char c = (s && s[i]) ? s[i] : ' '; // checks if character is valid or a null (space)

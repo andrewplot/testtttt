@@ -18,7 +18,6 @@
 
 
 /*
-1. fix oled and remove gradient
 2. brighten background and reduce noise + fix enemy alignment on horizontal path
     -fix path color
 3. tower sprites + slot sprites

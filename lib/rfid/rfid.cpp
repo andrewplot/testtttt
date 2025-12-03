@@ -6,7 +6,7 @@
 #include "rfid_reader_uart.hh"
 #include "buzzer_pwm.hh"
 
-#define RFID_TIMER_MS 1000
+#define RFID_TIMER_MS 2000
 
 volatile bool rfid_flag = false;
 uint8_t uid[10];

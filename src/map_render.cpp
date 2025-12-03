@@ -11,9 +11,9 @@
 #define GRASS_G 60
 #define GRASS_B 0
 
-#define PATH_R 40
-#define PATH_G 40
-#define PATH_B 40
+#define PATH_R 45
+#define PATH_G 45
+#define PATH_B 45
 
 #define TREE_GREEN_R 0
 #define TREE_GREEN_G 80
@@ -33,7 +33,7 @@
 
 // Random noise variation amounts
 #define BG_VARIATION 8
-#define PATH_VARIATION 5
+#define PATH_VARIATION 3
 
 // Cached background and path textures
 static Color background_cache[MATRIX_HEIGHT][MATRIX_WIDTH];
@@ -108,31 +108,40 @@ static void generate_path_mask(const GameState* game) {
         int point_count;
         get_line_points(x1, y1, x2, y2, points_x, points_y, &point_count);
         
+        // Determine if segment is horizontal or vertical (check FIRST point pair)
+        bool is_horizontal = (y1 == y2);
+        
         // For each center point, mark a 3-pixel-wide path
         for (int p = 0; p < point_count; p++) {
             int cx = points_x[p];
             int cy = points_y[p];
             
-            // Mark center pixel
+            // Mark center pixel (where enemy moves)
             if (cx >= 0 && cx < MATRIX_WIDTH && cy >= 0 && cy < MATRIX_HEIGHT) {
                 path_mask[cy][cx] = true;
             }
             
-            // Determine if segment is horizontal or vertical
-            bool is_horizontal = (y1 == y2);
-            
             if (is_horizontal) {
-                // Add pixels above and below
-                if (cy - 1 >= 0) path_mask[cy - 1][cx] = true;
-                if (cy + 1 < MATRIX_HEIGHT) path_mask[cy + 1][cx] = true;
+                // Horizontal segment: add pixels above (cy-1) and below (cy+1)
+                if (cy - 1 >= 0 && cx >= 0 && cx < MATRIX_WIDTH) {
+                    path_mask[cy - 1][cx] = true;
+                }
+                if (cy + 1 < MATRIX_HEIGHT && cx >= 0 && cx < MATRIX_WIDTH) {
+                    path_mask[cy + 1][cx] = true;
+                }
             } else {
-                // Add pixels left and right
-                if (cx - 1 >= 0) path_mask[cy][cx - 1] = true;
-                if (cx + 1 < MATRIX_WIDTH) path_mask[cy][cx + 1] = true;
+                // Vertical segment: add pixels left (cx-1) and right (cx+1)
+                if (cx - 1 >= 0 && cy >= 0 && cy < MATRIX_HEIGHT) {
+                    path_mask[cy][cx - 1] = true;
+                }
+                if (cx + 1 < MATRIX_WIDTH && cy >= 0 && cy < MATRIX_HEIGHT) {
+                    path_mask[cy][cx + 1] = true;
+                }
             }
         }
     }
 }
+
 
 // Generate textured background with random noise (once)
 static void generate_background_texture() {
@@ -156,14 +165,18 @@ static void generate_path_texture() {
     for (int y = 0; y < MATRIX_HEIGHT; y++) {
         for (int x = 0; x < MATRIX_WIDTH; x++) {
             if (path_mask[y][x]) {
-                int r = PATH_R + random_range(-PATH_VARIATION, PATH_VARIATION);
-                int g = PATH_G + random_range(-PATH_VARIATION, PATH_VARIATION);
-                int b = PATH_B + random_range(-PATH_VARIATION, PATH_VARIATION);
+                // Start with base gray value (average of PATH_R, PATH_G, PATH_B)
+                int base_gray = (PATH_R + PATH_G + PATH_B) / 3;
                 
+                // Add subtle random variation to the gray value
+                int gray = base_gray + random_range(-PATH_VARIATION, PATH_VARIATION);
+                gray = constrain_color(gray);
+                
+                // Use the same value for R, G, and B to ensure pure gray
                 path_cache[y][x] = Color{
-                    constrain_color(r),
-                    constrain_color(g),
-                    constrain_color(b)
+                    (uint8_t)gray,
+                    (uint8_t)gray,
+                    (uint8_t)gray
                 };
             } else {
                 path_cache[y][x] = Color{0, 0, 0};  // Not used
@@ -171,6 +184,7 @@ static void generate_path_texture() {
         }
     }
 }
+
 
 // Initialize the map rendering system
 void map_render_init(const GameState* game) {

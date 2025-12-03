@@ -16,6 +16,11 @@
 #include "pin-definitions.hh"
 #include "wave_system.h"
 
+/*
+add rfid button
+fix tower projectiles
+maybe remove target range circle*/
+
 // Forward declarations for LED matrix driver functions
 void init_matrix();
 void swap_frames();
@@ -313,7 +318,7 @@ int main() {
     printf("================================\n\n");
 
     while (true) {
-        check_tower_selection();
+        // check_tower_selection();
         handle_joystick();
         
         update_game();

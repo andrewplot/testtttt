@@ -3,6 +3,12 @@
 
 #include "color.hh"
 
+#define MATRIX_ROWS 32
+#define MATRIX_COLS 64
+
+// External access to framebuffers for optimization
+extern Color frames[2][MATRIX_ROWS][MATRIX_COLS];
+extern int frame_index;
 
 /*  NOTES:
 

@@ -1,0 +1,25 @@
+{
+  "name": "Forest",
+  "width": 64,
+  "height": 32,
+  "background_color": [0, 60, 0],
+  "path": [
+    [63, 20],
+    [20, 20],
+    [20, 10],
+    [0, 10]
+  ],
+  "towers": [
+    [10, 5],
+    [10, 25],
+    [40, 15]
+  ],
+"decorations": [
+    {"type": "tree", "x": 30, "y": 5},
+    {"type": "rock", "x": 20, "y": 28},
+    {"type": "lake", "x": 45, "y": 8}
+  ],
+  "spawn": [63, 20],
+  "end": [0, 10],
+  "waves": [3, 5, 8, 10]
+}

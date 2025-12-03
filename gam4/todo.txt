@@ -1,0 +1,41 @@
+development stages:
+    fix banner plane DONE 
+    delay wave manager to be after banner plane
+    fix radar
+    place towers anywhere
+    design towers
+    work on balancing
+    add tower upgrades
+
+
+
+
+    
+
+
+
+
+tower types: 
+    regular -> -> +range -> +penetration
+    splash -> +splash
+    camo/lead targetting
+
+enemy types:
+    regular red
+    fast white that splits into reds
+    higher health blues
+    lead
+    moab that ignores path
+
+maps:
+    some kind of water that requires building rafts for towers?
+    another stage, one easy one hard
+
+other:
+    ability to place towers anywhere
+    some kind of ability
+    flash house from yellow to red on each hit of damage
+    NIGHT TIME WITH LIGHTS?? TREES CAST SHADOWS
+
+questions: does programming complexity help with spark? like ray casting or double buffering
+this is the project description: i am working on a project: it is a rp2350b microcontroller project for a tower defense game with four peripherals: a 32x64 LED matrix as the main display, RFID tags for selection, an RFID reader to read it, a controller of some kind for inputs, and a small LCD display to display miscellaneous info like balance. It is for a tower defense game. The game is played on the main display, and is a single map/path for enemies to go across. to simplify the coding, i think its best to have a few preset tower placement squares, and maybe like two enemies types. its based off bloonds td. there will be maybe three tower types. you can select the tower types by scanning an rfid tag associated with that tower to select it, and on the LCD display you can see points and money or something along those lines.

@@ -18,8 +18,9 @@
 
 
 /*
-1. fix tower selection + tower ranges
+1. fix oled and remove gradient
 2. brighten background and reduce noise + fix enemy alignment on horizontal path
+    -fix path color
 3. tower sprites + slot sprites
 4. wave system
 5. start sequence + banner planes + death sequence
@@ -238,7 +239,6 @@ static void update_game() {
 // -----------------------------------------------------------------------------
 // Render game into framebuffer, then to LED matrix + OLED
 // -----------------------------------------------------------------------------
-
 static void render_game_to_framebuffer() {
     // 1. Draw map (background + path with textures)
     map_render_draw(&game);
@@ -258,22 +258,24 @@ static void render_game_to_framebuffer() {
         draw_tower_range(slot->x, slot->y, stats->range);
         
         // Highlight current tower slot cursor (on top of range)
-        // Make it pulse by varying brightness based on game time
-        int brightness = 128 + (int)(127.0f * sinf(game.game_time * 4.0f));
+        // Blink on/off based on game time (2 Hz = 2 blinks per second)
+        bool blink_on = ((int)(game.game_time * 2.0f) % 2) == 0;
         
-        int cx = slot->x;
-        int cy = slot->y;
-        
-        // Draw a 5x5 highlight box with pulsing color
-        for (int dy = -2; dy <= 2; ++dy) {
-            for (int dx = -2; dx <= 2; ++dx) {
-                // Only draw border, not filled
-                if (abs(dx) == 2 || abs(dy) == 2) {
-                    int px = cx + dx;
-                    int py = cy + dy;
-                    if (px >= 0 && px < MATRIX_WIDTH &&
-                        py >= 0 && py < MATRIX_HEIGHT) {
-                        set_pixel(px, py, Color(brightness, brightness, 255));
+        if (blink_on) {
+            int cx = slot->x;
+            int cy = slot->y;
+            
+            // Draw a 5x5 highlight box
+            for (int dy = -2; dy <= 2; ++dy) {
+                for (int dx = -2; dx <= 2; ++dx) {
+                    // Only draw border, not filled
+                    if (abs(dx) == 2 || abs(dy) == 2) {
+                        int px = cx + dx;
+                        int py = cy + dy;
+                        if (px >= 0 && px < MATRIX_WIDTH &&
+                            py >= 0 && py < MATRIX_HEIGHT) {
+                            set_pixel(px, py, Color(100, 100, 255));  // Bright blue
+                        }
                     }
                 }
             }

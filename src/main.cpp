@@ -18,11 +18,28 @@
 
 
 /*
-TO IMPLEMENT:
--abilities
--banner plane
--map file w decorations
+
+1. fix tower selection + tower ranges
+
+2. brighten background and reduce noise + fix enemy alignment on horizontal path
+
+3. tower sprites + slot sprites
+
+4. wave system
+
+5. start sequence + banner planes + death sequence
+
+6. make decorations nicer
+
+7. place towers anywhere!
+
+8. make towers rotate and track
+
+9. abilities
+
 */
+
+
 
 
 // -----------------------------------------------------------------------------

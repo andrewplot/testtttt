@@ -370,3 +370,9 @@ int main() {
 
     return 0;
 }
+
+/*
+start screen
+see why it doesnt go to next wave sometimes
+fix projectile aiming
+*/

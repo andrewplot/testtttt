@@ -90,7 +90,7 @@ void buzzer_beep(uint32_t frequency, uint32_t duration_ms) {
 }
 
 void beep_ok() {
-    buzzer_play_tone(NOTE_C5, 80);
+    buzzer_beep(NOTE_C5, 80);
 }
 
 void buzzer_play_note(uint32_t note, uint32_t duration_ms) {

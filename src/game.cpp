@@ -1,4 +1,4 @@
-// game.cpp - Core game implementation with FIXED PROJECTILES
+// game.cpp - Core game implementation with IMPROVED RADAR
 #include "game_types.h"
 
 #include <math.h>
@@ -21,6 +21,48 @@ static HardwareTowerType game_to_hardware_tower(TowerType game_type) {
 }
 
 void tower_draw(const Tower* tower) {
+    // For radar towers, draw range circle FIRST (under everything)
+    if (tower->is_radar) {
+        int radius = (int)(tower->range);
+        int cx = (int)tower->x;
+        int cy = (int)tower->y;
+        
+        // Draw green circle outline using midpoint circle algorithm
+        Color circle_color = {0, 120, 0};  // Green border
+        
+        int x = radius;
+        int y = 0;
+        int err = 0;
+        
+        while (x >= y) {
+            // Draw 8 symmetric points (single pixel outline)
+            int points[8][2] = {
+                {cx + x, cy + y}, {cx + y, cy + x},
+                {cx - y, cy + x}, {cx - x, cy + y},
+                {cx - x, cy - y}, {cx - y, cy - x},
+                {cx + y, cy - x}, {cx + x, cy - y}
+            };
+            
+            for (int i = 0; i < 8; i++) {
+                int px = points[i][0];
+                int py = points[i][1];
+                if (px >= 0 && px < MATRIX_WIDTH && py >= 0 && py < MATRIX_HEIGHT) {
+                    set_pixel(px, py, circle_color);
+                }
+            }
+            
+            if (err <= 0) {
+                y += 1;
+                err += 2 * y + 1;
+            }
+            
+            if (err > 0) {
+                x -= 1;
+                err -= 2 * x + 1;
+            }
+        }
+    }
+    
     // Get the appropriate sprite based on tower type
     HardwareTowerType hw_type = game_to_hardware_tower(tower->type);
     const Color* sprite = get_sprite(hw_type);
@@ -40,16 +82,16 @@ void tower_draw(const Tower* tower) {
         }
     }
     
-    // Draw radar sweep line if it's a radar tower
+    // Draw radar sweep line AFTER sprite (on top)
     if (tower->is_radar) {
         int cx = (int)tower->x;
         int cy = (int)tower->y;
-        int sweep_length = (int)(tower->range) - 1;
+        int sweep_length = (int)(tower->range) - 1;  // Stay inside circle
         int end_x = cx + (int)(cosf(tower->radar_angle) * sweep_length);
         int end_y = cy + (int)(sinf(tower->radar_angle) * sweep_length);
         
-        // Draw sweep line in cyan
-        matrix_draw_line(cx, cy, end_x, end_y, Color(0, 120, 120));
+        // Draw sweep line in green
+        matrix_draw_line(cx, cy, end_x, end_y, Color(0, 200, 0));
     }
 }
 
@@ -219,7 +261,7 @@ const TowerStats TOWER_STATS_TABLE[] = {
     {
         .cost = 60,
         .damage = 0,
-        .range = 10.0f,
+        .range = 15.0f,  // Increased range to match Python
         .fire_rate = 0.0f,
         .projectile_speed = 0.0f,
         .color = {0, 255, 255},

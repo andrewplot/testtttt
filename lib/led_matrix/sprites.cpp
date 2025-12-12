@@ -33,7 +33,7 @@ namespace {
         {SNIPER_BROWN,       SNIPER_BROWN,       SNIPER_BROWN,       SNIPER_BROWN}        // Solid base
     };
 
-    // Radar - Detection tower (red/white with rotating dish)
+    // Radar - Detection tower (blue with cyan dish pattern)
     static const Color sprite_ninja[4][4] = {
         {NINJA_WHITE, NINJA_RED,   NINJA_RED,   NINJA_WHITE},    // Radar dish
         {NINJA_RED,   NINJA_WHITE, NINJA_WHITE, NINJA_RED},      // Dish pattern

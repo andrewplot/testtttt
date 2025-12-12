@@ -6,12 +6,12 @@
 
 // LED Matrix
 #define E      5
-#define B2     12
-#define B1     10
+#define B2     6
+#define B1     7
 #define R1     9
-#define G1     7
+#define G1     10
 #define R2     11
-#define G2     6
+#define G2     12
 #define A      13
 #define C      14
 #define CLK    15
